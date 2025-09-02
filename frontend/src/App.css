@@ -3,6 +3,7 @@
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+  padding: 0;
 }
 
 .logo {
@@ -40,3 +41,44 @@
 .read-the-docs {
   color: #888;
 }
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.layout {
+  display: flex;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    flex-direction: column;
+  }
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nav button {
+  flex: 1;
+  min-width: max-content;
+}
+
+h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+p {
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+}
+

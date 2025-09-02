@@ -1,10 +1,34 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+function ErrorBoundary({ children, label = "Error" }) {
+  const [err, setErr] = React.useState(null);
+  if (err) {
+    return (
+      <div style={{ padding: 12, border: "1px solid #444", borderRadius: 8, background: "#1a1a1a" }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>{label}</div>
+        <pre style={{ whiteSpace: "pre-wrap", color: "#fca5a5" }}>{String(err.stack || err)}</pre>
+      </div>
+    );
+  }
+  return (
+    <React.Suspense fallback={<div style={{padding:12}}>Loading…</div>}>
+      <BoundaryInner onError={setErr}>{children}</BoundaryInner>
+    </React.Suspense>
+  );
+}
+function BoundaryInner({ children, onError }) {
+  try {
+    return children;
+  } catch (e) {
+    onError(e);
+    return null;
+  }
+}
+
+
 /**
  * Trade Journal – Tailwind-free version
- * - Pure React + inline/CSS styles (no Tailwind required)
- * - Month & Year calendars, day details, Add/Edit Trade modal, unlimited screenshot previews
- * - LocalStorage for metadata (screenshots are preview-only blob URLs; wire a backend for permanence)
+ * Pure React + inline styles
  */
 
 /*************************
@@ -49,26 +73,25 @@ function saveJournal(state) {
  * Data Types
  *************************/
 const newTradeTemplate = (dateKey) => ({
-  id: crypto.randomUUID(),
+  id: (crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
   dateKey: dateKey || fmtDateKey(new Date()),
   title: "",
   pair: "",
   status: "Win",           // Win | Loss | BE
   side: "Long",            // Long | Short
   openTime: new Date().toISOString(),
-  rr: "",                  // Risk/Reward (kept)
+  rr: "",                  // Risk/Reward
   confidence: 1,
   rating: 0,
   tags: [],
   notes: "",
-  checklist: "",           // NEW
+  checklist: "",
   screenshots: [],         // [{name, url}] or {name, path}
   pnl: 0,
 });
 
-
 /*************************
- * Styles (simple dark theme)
+ * Theme
  *************************/
 const colors = {
   bg: "#0b0b0c",
@@ -81,78 +104,219 @@ const colors = {
   red: "#ef4444",
   green: "#34d399",
 };
+
+/*************************
+ * Styles
+ *************************/
 const styles = {
   page: {
-    minHeight: "100vh",
-    background: colors.bg,
-    color: colors.text,
+    minHeight: "100dvh",
+    background: "#141414",
+    color: "#e7e7e7",
+    display: "flex",
+    flexDirection: "column",
     fontFamily:
-      "Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif",
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"',
   },
-  container: { maxWidth: 1100, margin: "0 auto", padding: "24px" },
+
+  /* --- Top Bar --- */
   topbar: {
     position: "sticky",
     top: 0,
     zIndex: 40,
-    backdropFilter: "saturate(120%) blur(6px)",
-    background: "rgba(11,11,12,0.6)",
-    borderBottom: `1px solid ${colors.border}`,
+    background: "rgba(20,20,20,0.75)",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    backdropFilter: "saturate(160%) blur(8px)",
   },
   topbarInner: {
-    maxWidth: 1100,
+    maxWidth: 1200,
     margin: "0 auto",
+    padding: "10px 12px",
     display: "flex",
     alignItems: "center",
-    gap: 12,
-    padding: "12px 16px",
+    gap: 8,
   },
-  brand: { fontWeight: 800, fontSize: 18 },
+  brand: {
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+    fontSize: "clamp(14px, 2.4vw, 18px)",
+    whiteSpace: "nowrap",
+  },
+  actions: {
+    marginLeft: "auto",
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    overflowX: "auto",
+    paddingBottom: 4,
+  },
+
+  /* --- Buttons --- */
   btn: {
-    background: colors.panelSoft,
-    border: `1px solid ${colors.border}`,
-    color: colors.text,
     padding: "8px 12px",
     borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#e7e7e7",
     cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+    transition: "background 120ms ease",
   },
   btnPrimary: {
-    background: colors.accent,
-    border: `1px solid ${colors.accent}`,
-    color: "white",
-    padding: "8px 12px",
+    padding: "8px 14px",
     borderRadius: 999,
+    border: "1px solid rgba(115,125,255,0.35)",
+    background: "rgba(115,125,255,0.2)",
+    color: "#ffffff",
     cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+    boxShadow: "0 0 0 1px rgba(115,125,255,0.15) inset",
+    transition: "background 120ms ease",
   },
+
+  /* --- Body / Containers --- */
+  main: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    padding: "16px 12px",
+    width: "100%",
+    flex: 1,
+  },
+  container: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    padding: "16px 12px",
+    width: "100%",
+  },
+
+  /* --- Responsive grid --- */
+  grid: {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    alignItems: "start",
+  },
+
+  /* --- Cards --- */
+  card: {
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.06)",
+    background: "rgba(255,255,255,0.04)",
+    padding: 16,
+  },
+
+  /* --- Hero --- */
   heroWrap: {
-    minHeight: "68vh",
+    textAlign: "center",
+    padding: "32px 12px",
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.06)",
+    background: "rgba(255,255,255,0.04)",
+  },
+  heroH1: {
+    fontSize: "clamp(28px, 6vw, 48px)",
+    fontWeight: 900,
+    letterSpacing: "-0.03em",
+    margin: 0,
+  },
+  heroP: {
+    marginTop: 8,
+    color: "rgba(231,231,231,0.8)",
+    fontSize: "clamp(14px, 2.8vw, 16px)",
+    lineHeight: 1.5,
+    maxWidth: 700,
+    marginInline: "auto",
+  },
+
+  /* --- Inputs --- */
+  label: {
+    display: "block",
+    fontSize: 12,
+    color: colors.textDim,
+    marginBottom: 6,
+  },
+  input: {
+    width: "100%",
+    background: "#0f0f11",
+    color: colors.text,
+    border: `1px solid ${colors.border}`,
+    borderRadius: 10,
+    padding: "8px 10px",
+    outline: "none",
+  },
+  textarea: {
+    width: "100%",
+    background: "#0f0f11",
+    color: colors.text,
+    border: `1px solid ${colors.border}`,
+    borderRadius: 12,
+    padding: 10,
+    outline: "none",
+  },
+
+  /* --- Modal --- */
+  modal: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 100,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    textAlign: "center",
-    flexDirection: "column",
-    gap: 16,
+    padding: 16,
   },
-  heroH1: { fontSize: 54, fontWeight: 900, letterSpacing: -1, margin: 0 },
-  heroP: { color: colors.textDim, maxWidth: 600, lineHeight: 1.6 },
-  grid7: {
-    display: "grid",
-    gridTemplateColumns: "repeat(7, 1fr)",
-    borderRadius: 14,
+  modalShade: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(0,0,0,0.5)",
+  },
+  modalInner: {
+    position: "relative",
+    width: "min(720px, 100%)",
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(30,30,30,1)",
+    padding: 16,
+    maxHeight: "85vh",
+    overflow: "auto",
+  },
+  modalHead: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+  },
+  modalBody: {
+    marginTop: 4,
+  },
+
+  /* --- Table (day details) --- */
+  tableDay: {
+    width: "100%",
+    border: `1px solid ${colors.border}`,
+    borderRadius: 12,
     overflow: "hidden",
   },
-  cell: {
-    height: 112,
-    border: `1px solid ${colors.border}`,
-    background: colors.panel,
+  tableHeader: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 0.9fr 1.5fr 1.5fr 0.8fr 1fr",
+    borderBottom: `1px solid ${colors.border}`,
+    background: "#0f0f11",
+    fontSize: 12,
+    color: colors.textDim,
   },
-  cellBtn: {
-    height: 112,
-    border: `1px solid ${colors.border}`,
-    background: colors.panel,
-    textAlign: "left",
-    padding: 8,
-    cursor: "pointer",
+  tableRow: {
+    display: "grid",
+    gridTemplateColumns: "1.2fr 0.9fr 1.5fr 1.5fr 0.8fr 1fr",
+    borderTop: `1px solid ${colors.border}`,
+    fontSize: 14,
   },
+
+  /* --- Month grid --- */
   monthHeader: {
     display: "flex",
     alignItems: "center",
@@ -162,89 +326,55 @@ const styles = {
   thWeekdays: {
     display: "grid",
     gridTemplateColumns: "repeat(7, 1fr)",
-    color: colors.textDim,
-    fontSize: 13,
-    marginBottom: 4,
-  },
-  tableDay: {
-    border: `1px solid ${colors.border}`,
-    background: colors.panelSoft,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  tableHeader: {
-    display: "grid",
-    gridTemplateColumns: "3fr 1fr 2fr 3fr 1fr 2fr",
-    background: "#0f0f12",
-    color: colors.textDim,
     fontSize: 12,
+    color: colors.textDim,
     borderBottom: `1px solid ${colors.border}`,
   },
-  tableRow: {
+  grid7: {
     display: "grid",
-    gridTemplateColumns: "3fr 1fr 2fr 3fr 1fr 2fr",
+    gridTemplateColumns: "repeat(7, 1fr)",
+    gap: 0,
+    borderLeft: `1px solid ${colors.border}`,
+    borderRight: `1px solid ${colors.border}`,
     borderBottom: `1px solid ${colors.border}`,
+    borderTop: `1px solid ${colors.border}`,
   },
-  pill: (bg, fg) => ({
+  cell: {
+    height: 72,
+    border: `1px solid ${colors.border}`,
+  },
+  cellBtn: {
+    height: 72,
+    border: `1px solid ${colors.border}`,
+    width: "100%",
+    textAlign: "left",
+    padding: "6px 8px",
+    background: "transparent",
+    color: colors.text,
+    cursor: "pointer",
+  },
+
+  /* --- Misc --- */
+  viewportBox: {
+    width: "100%",
+    aspectRatio: "16 / 9",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(0,0,0,0.35)",
+  },
+
+  // Dynamic pill style factory (used by <Pill/>)
+  pill: (bg, textColor) => ({
     display: "inline-flex",
     alignItems: "center",
-    padding: "2px 8px",
+    gap: 6,
+    padding: "4px 8px",
     borderRadius: 999,
     fontSize: 12,
     background: bg,
-    color: fg,
+    color: textColor,
     border: `1px solid ${colors.border}`,
   }),
-  input: {
-    width: "100%",
-    background: colors.panel,
-    border: `1px solid ${colors.border}`,
-    color: colors.text,
-    borderRadius: 12,
-    padding: "8px 10px",
-  },
-  textarea: {
-    width: "100%",
-    background: colors.panel,
-    border: `1px solid ${colors.border}`,
-    color: colors.text,
-    borderRadius: 12,
-    padding: 12,
-  },
-  card: {
-    background: colors.panelSoft,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 16,
-    padding: 12,
-  },
-  label: { fontSize: 12, color: colors.textDim, marginBottom: 4, display: "block" },
-  modalShade: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 0 },
-  modal: {
-    position: "fixed",
-    inset: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 9999,                 // make the whole modal stack high
-  },
-  modalInner: {
-    position: "relative",         // <-- add
-    zIndex: 1,                    // <-- add (above the shade)
-    width: "95vw",
-    maxWidth: 900,
-    background: colors.panel,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 16,
-    boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
-  },
-  modalHead: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 16px",
-    borderBottom: `1px solid ${colors.border}`,
-  },
-  modalBody: { padding: 16 },
 };
 
 /*************************
@@ -332,11 +462,9 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
     }
     if (!files.length) return;
     e.preventDefault();
-    e.stopPropagation();   // <- prevents bubbling to any parent handlers
+    e.stopPropagation();
     await onFiles(files);
   };
-
-
 
   return (
     <form
@@ -416,8 +544,13 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }} onPaste={onPaste}>
-          <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
-                onChange={(e) => onFiles(e.target.files)} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => onFiles(e.target.files)}
+          />
           <button type="button" onClick={() => fileInputRef.current?.click()} style={styles.btn}>
             Upload images
           </button>
@@ -425,8 +558,6 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
             Tip: click here and press Ctrl+V to paste screenshots.
           </span>
         </div>
-
-
       </Section>
 
       <Section>
@@ -486,25 +617,28 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
       </Section>
 
       <Section>
-      <Row cols="1fr" gap={12}>
-        <div>
-          <label style={styles.label}>Risk/Reward</label>
-          <input
-            value={t.rr}
-            onChange={(e) => set("rr", e.target.value)}
-            placeholder="2"
-            style={styles.input}
-          />
-        </div>
-      </Row>
-    </Section>
-
+        <Row cols="1fr" gap={12}>
+          <div>
+            <label style={styles.label}>Risk/Reward</label>
+            <input
+              value={t.rr}
+              onChange={(e) => set("rr", e.target.value)}
+              placeholder="2"
+              style={styles.input}
+            />
+          </div>
+        </Row>
+      </Section>
 
       <Section>
         <Row cols="1fr 1fr" gap={12}>
           <div>
             <label style={styles.label}>Checklist (optional)</label>
-            <select style={styles.input}>
+            <select
+              value={t.checklist}
+              onChange={(e)=>set("checklist", e.target.value)}
+              style={styles.input}
+            >
               <option value="">Select a checklist</option>
               <option>W1 &gt; H4 &gt; m15</option>
               <option>D1 &gt; H1 &gt; m5</option>
@@ -629,7 +763,7 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
 };
 
 /*************************
- * Trade Viewer (read-only)
+ * Trade Viewer
  *************************/
 const InfoRow = ({label, children}) => (
   <div style={{display:"grid", gridTemplateColumns:"140px 1fr", gap:12, marginBottom:8}}>
@@ -699,33 +833,63 @@ const TradeViewer = ({trade})=>{
   );
 };
 
-
 /*************************
  * Month View
  *************************/
 const MonthView = ({ date, tradesByDay, onPrev, onNext, onToggleYear, onDayClick }) => {
-  const start = startOfMonth(date);
-  const end = endOfMonth(date);
-  const firstDow = (start.getDay() + 6) % 7; // Monday=0
+  // Guard against invalid 'date'
+  const today = new Date();
+  const base = (date instanceof Date && !isNaN(date)) ? date : today;
+
+  // Defensive helpers
+  const safeFmt = (d) => {
+    try { return fmtDateKey(d); } catch { return fmtDateKey(today); }
+  };
+  const sumPnL = (arr = []) => {
+    try { return arr.reduce((a, b) => a + (Number(b?.pnl) || 0), 0); } catch { return 0; }
+  };
+
+  let start, end;
+  try {
+    start = startOfMonth(base);
+    end = endOfMonth(base);
+  } catch {
+    start = startOfMonth(today);
+    end = endOfMonth(today);
+  }
+
+  let firstDow = 0;
+  try {
+    firstDow = (start.getDay() + 6) % 7; // Monday=0
+  } catch {
+    firstDow = 0;
+  }
+
   const days = [];
   for (let i = 0; i < firstDow; i++) days.push(null);
-  for (let d = 1; d <= end.getDate(); d++)
-    days.push(new Date(date.getFullYear(), date.getMonth(), d));
+  for (let d = 1; d <= end.getDate(); d++) days.push(new Date(base.getFullYear(), base.getMonth(), d));
   while (days.length % 7 !== 0) days.push(null);
 
   const dayCells = days.map((d, idx) => {
     if (!d) return <div key={idx} style={styles.cell} />;
-    const dk = fmtDateKey(d);
-    const list = tradesByDay[dk] || [];
-    const total = list.reduce((a, b) => a + (b.pnl || 0), 0);
 
+    const dk = safeFmt(d);
+    const list = (tradesByDay && tradesByDay[dk]) ? tradesByDay[dk] : [];
+    const total = sumPnL(list);
+
+    // choose pill tone based on PnL
     let pillStyle = styles.pill("rgba(39,39,42,0.7)", "#e5e7eb");
     if (total > 0) pillStyle = styles.pill("rgba(16,185,129,0.18)", "#d1fae5");
     if (total < 0) pillStyle = styles.pill("rgba(244,63,94,0.18)", "#ffe4e6");
 
     return (
-      <button key={idx} onClick={() => onDayClick(dk)} style={styles.cellBtn}>
-        <div style={{ fontSize: 12, color: colors.textDim }}>{d.getDate()}</div>
+      <button
+        key={idx}
+        onClick={() => onDayClick && onDayClick(dk)}
+        style={styles.cellBtn}
+        title={`${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`}
+      >
+        <div style={{ fontSize: 12, color: "#9ca3af" }}>{d.getDate()}</div>
         {list.length > 0 && (
           <div style={{ marginTop: 8 }}>
             <span style={pillStyle}>
@@ -740,40 +904,36 @@ const MonthView = ({ date, tradesByDay, onPrev, onNext, onToggleYear, onDayClick
     );
   });
 
+  // Wrap header+grid in a mini boundary to surface any errors
   return (
-    <div>
-      <div style={styles.monthHeader}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={onPrev} style={styles.btn}>
-            ‹
-          </button>
-          <div style={{ fontSize: 18, fontWeight: 600 }}>
-            {months[date.getMonth()]}{" "}
-            <span style={{ color: colors.textDim }}>{date.getFullYear()}</span>
+    <ErrorBoundary label="MonthView render error">
+      <div>
+        <div style={styles.monthHeader}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={onPrev} style={styles.btn}>‹</button>
+            <div style={{ fontSize: 18, fontWeight: 600 }}>
+              {months[base.getMonth()]}{" "}
+              <span style={{ color: "#9ca3af" }}>{base.getFullYear()}</span>
+            </div>
+            <button onClick={onNext} style={styles.btn}>›</button>
           </div>
-          <button onClick={onNext} style={styles.btn}>
-            ›
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onToggleYear} style={styles.btn}>
-            Year
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.thWeekdays}>
-        {weekdays.map((w) => (
-          <div key={w} style={{ padding: "6px 8px" }}>
-            {w}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onToggleYear} style={styles.btn}>Year</button>
           </div>
-        ))}
-      </div>
+        </div>
 
-      <div style={styles.grid7}>{dayCells}</div>
-    </div>
+        <div style={styles.thWeekdays}>
+          {weekdays.map((w) => (
+            <div key={w} style={{ padding: "6px 8px" }}>{w}</div>
+          ))}
+        </div>
+
+        <div style={styles.grid7}>{dayCells}</div>
+      </div>
+    </ErrorBoundary>
   );
 };
+
 
 /*************************
  * Year View
@@ -783,9 +943,7 @@ const YearView = ({ year, tradesByDay, onBackToMonth, onPickMonth }) => {
     <div>
       <div style={{ ...styles.monthHeader, marginBottom: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 600 }}>{year}</div>
-        <button onClick={onBackToMonth} style={styles.btn}>
-          Month
-        </button>
+        <button onClick={onBackToMonth} style={styles.btn}>Month</button>
       </div>
 
       <div
@@ -909,7 +1067,9 @@ const DayDetails = ({ dateKey, trades, onView, onEdit, onDelete }) => {
         </div>
 
         {trades.length === 0 && (
-          <div style={{ padding: 12, fontSize: 14, color: colors.textDim }}>No trades logged.</div>
+          <div style={{ padding: 12, fontSize: 14, color: colors.textDim }}>
+            No trades logged.
+          </div>
         )}
 
         {trades.map((tr) => (
@@ -925,20 +1085,23 @@ const DayDetails = ({ dateKey, trades, onView, onEdit, onDelete }) => {
             <div style={{ padding: 8 }}>
               <Pill tone={tr.side === "Long" ? "cyan" : "violet"}>{tr.side}</Pill>
             </div>
-            <div style={{ padding: 8, display: "flex", gap: 8 }}>
+            <div style={{ padding: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={() => onView(tr)} style={styles.btn}>View</button>
               <button onClick={() => onEdit(tr)} style={styles.btn}>Edit</button>
-              <button onClick={() => onDelete(tr)} style={{ ...styles.btn, background: "#3b0b0b" }}>
+              <button
+                onClick={() => onDelete(tr)}
+                style={{ ...styles.btn, background: "#3b0b0b" }}
+              >
                 Delete
               </button>
             </div>
-
           </div>
         ))}
       </div>
     </div>
   );
 };
+
 
 /*************************
  * Hero / Home
@@ -948,8 +1111,8 @@ const Hero = ({ onGoCalendar, onAddTrade }) => {
     <div style={styles.heroWrap}>
       <h1 style={styles.heroH1}>Josh's Journal</h1>
       <p style={styles.heroP}>
-        Fast, personal trade journaling with calendar insights, unlimited screenshots, and ratings —
-        all stored locally for your eyes only.
+        Trade Journal of Josh Villaluz for Forex Trading.
+        Made September 2025
       </p>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
         <button onClick={onGoCalendar} style={styles.btn}>
@@ -1019,7 +1182,7 @@ export default function TradeJournalApp() {
       {/* Top bar */}
       <div style={styles.topbar}>
         <div style={styles.topbarInner}>
-          <div style={styles.brand}>My Notes</div>
+          <div style={styles.brand}>Trade Journal</div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button onClick={() => setView("home")} style={styles.btn}>
               Home
@@ -1101,11 +1264,13 @@ export default function TradeJournalApp() {
           />
         )}
       </Modal>
+
       {/* Viewer Modal */}
       <Modal
         open={!!viewer}
         onClose={() => setViewer(null)}
-        title={viewer ? "View Trade" : ""}>
+        title={viewer ? "View Trade" : ""}
+      >
         {viewer && <TradeViewer trade={viewer.trade} />}
       </Modal>
     </div>
