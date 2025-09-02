@@ -641,6 +641,80 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
 };
 
 /*************************
+ * Trade Viewer (read-only)
+ *************************/
+const InfoRow = ({label, children}) => (
+  <div style={{display:"grid", gridTemplateColumns:"140px 1fr", gap:12, marginBottom:8}}>
+    <div style={{color: colors.textDim, fontSize:12}}>{label}</div>
+    <div>{children ?? "—"}</div>
+  </div>
+);
+
+const TradeViewer = ({trade})=>{
+  if(!trade) return null;
+  return (
+    <div style={{display:"grid", gridTemplateColumns:"1fr", gap:16}}>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
+        <div style={styles.card}>
+          <InfoRow label="Title">{trade.title || "Untitled"}</InfoRow>
+          <InfoRow label="Date">{trade.dateKey}</InfoRow>
+          <InfoRow label="Open Time">{new Date(trade.openTime).toLocaleString()}</InfoRow>
+          <InfoRow label="Pair">{trade.pair}</InfoRow>
+          <InfoRow label="Status"><Pill tone={trade.status==='Win'?'emerald': trade.status==='Loss'?'rose':'zinc'}>{trade.status}</Pill></InfoRow>
+          <InfoRow label="Side"><Pill tone={trade.side==='Long'?'cyan':'violet'}>{trade.side}</Pill></InfoRow>
+          <InfoRow label="P&L">{currency(Number(trade.pnl||0))}</InfoRow>
+        </div>
+
+        <div style={styles.card}>
+          <InfoRow label="Entry">{trade.entry}</InfoRow>
+          <InfoRow label="Stop">{trade.stop}</InfoRow>
+          <InfoRow label="Take Profit">{trade.tp}</InfoRow>
+          <InfoRow label="Risk/Reward">{trade.rr}</InfoRow>
+          <InfoRow label="Confidence">{trade.confidence} / 5</InfoRow>
+          <InfoRow label="Rating">
+            <span style={{fontSize:18, letterSpacing:2}}>
+              {"★".repeat(trade.rating)}{"☆".repeat(5-trade.rating)}
+            </span>
+          </InfoRow>
+          <InfoRow label="Tags">
+            {trade.tags?.length ? trade.tags.map(t=>(
+              <span key={t} style={{marginRight:6, padding:"2px 8px", borderRadius:999, background: colors.panel, border:`1px solid ${colors.border}`, fontSize:12}}>#{t}</span>
+            )) : "—"}
+          </InfoRow>
+        </div>
+      </div>
+
+      <div style={styles.card}>
+        <div style={{marginBottom:6, color:colors.textDim, fontSize:12}}>Notes</div>
+        <div style={{whiteSpace:"pre-wrap"}}>{trade.notes || "—"}</div>
+      </div>
+
+      <div style={styles.card}>
+        <div style={{marginBottom:6, color:colors.textDim, fontSize:12}}>Screenshots</div>
+        {trade.screenshots?.length ? (
+          <div style={{display:"flex", flexWrap:"wrap", gap:10}}>
+            {trade.screenshots.map((s, i)=>(
+              <a key={i}
+                 href={s.path ? s.path : s.url}
+                 target="_blank" rel="noreferrer"
+                 title={s.name}
+                 style={{display:"block", width:220, height:124, border:`1px solid ${colors.border}`, borderRadius:12, overflow:"hidden"}}>
+                <img
+                  src={s.path ? s.path : s.url}
+                  alt={s.name}
+                  style={{width:"100%", height:"100%", objectFit:"cover"}}
+                />
+              </a>
+            ))}
+          </div>
+        ) : "No screenshots."}
+      </div>
+    </div>
+  );
+};
+
+
+/*************************
  * Month View
  *************************/
 const MonthView = ({ date, tradesByDay, onPrev, onNext, onToggleYear, onDayClick }) => {
@@ -825,7 +899,7 @@ const YearView = ({ year, tradesByDay, onBackToMonth, onPickMonth }) => {
 /*************************
  * Day Details
  *************************/
-const DayDetails = ({ dateKey, trades, onEdit, onDelete }) => {
+const DayDetails = ({ dateKey, trades, onView, onEdit, onDelete }) => {
   const day = parseDateKey(dateKey);
   return (
     <div style={{ marginTop: 24 }}>
@@ -866,13 +940,13 @@ const DayDetails = ({ dateKey, trades, onEdit, onDelete }) => {
               <Pill tone={tr.side === "Long" ? "cyan" : "violet"}>{tr.side}</Pill>
             </div>
             <div style={{ padding: 8, display: "flex", gap: 8 }}>
-              <button onClick={() => onEdit(tr)} style={styles.btn}>
-                Edit
-              </button>
+              <button onClick={() => onView(tr)} style={styles.btn}>View</button>
+              <button onClick={() => onEdit(tr)} style={styles.btn}>Edit</button>
               <button onClick={() => onDelete(tr)} style={{ ...styles.btn, background: "#3b0b0b" }}>
                 Delete
               </button>
             </div>
+
           </div>
         ))}
       </div>
@@ -907,6 +981,7 @@ const Hero = ({ onGoCalendar, onAddTrade }) => {
  * Root App
  *************************/
 export default function TradeJournalApp() {
+  const [viewer, setViewer] = useState(null); // { trade }
   const [state, setState] = useState(() => loadJournal());
   const [view, setView] = useState("home"); // home | calendar | year
   const [monthAnchor, setMonthAnchor] = useState(() => new Date());
@@ -1006,6 +1081,7 @@ export default function TradeJournalApp() {
             <DayDetails
               dateKey={selectedDayKey}
               trades={dayTrades}
+              onView={(tr) => setViewer({ trade: tr })}
               onEdit={(tr) => setModal({ mode: "edit", trade: tr })}
               onDelete={handleDelete}
             />
@@ -1038,6 +1114,13 @@ export default function TradeJournalApp() {
             onCancel={() => setModal(null)}
           />
         )}
+      </Modal>
+      {/* Viewer Modal */}
+      <Modal
+        open={!!viewer}
+        onClose={() => setViewer(null)}
+        title={viewer ? "View Trade" : ""}>
+        {viewer && <TradeViewer trade={viewer.trade} />}
       </Modal>
     </div>
   );
