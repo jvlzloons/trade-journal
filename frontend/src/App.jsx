@@ -53,20 +53,19 @@ const newTradeTemplate = (dateKey) => ({
   dateKey: dateKey || fmtDateKey(new Date()),
   title: "",
   pair: "",
-  status: "Win", // Win | Loss | BE
-  side: "Long", // Long | Short
+  status: "Win",           // Win | Loss | BE
+  side: "Long",            // Long | Short
   openTime: new Date().toISOString(),
-  entry: "",
-  stop: "",
-  tp: "",
-  rr: "",
+  rr: "",                  // Risk/Reward (kept)
   confidence: 1,
   rating: 0,
   tags: [],
   notes: "",
-  screenshots: [], // [{name, url}] (preview only; not persistent after reload)
+  checklist: "",           // NEW
+  screenshots: [],         // [{name, url}] or {name, path}
   pnl: 0,
 });
+
 
 /*************************
  * Styles (simple dark theme)
@@ -321,6 +320,23 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
     }
     setT((prev) => ({ ...prev, screenshots: [...prev.screenshots, ...shots] }));
   };
+  
+  const onPaste = async (e) => {
+    const items = e.clipboardData?.items || [];
+    const files = [];
+    for (const it of items) {
+      if (it.kind === "file") {
+        const f = it.getAsFile();
+        if (f && f.type.startsWith("image/")) files.push(f);
+      }
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();   // <- prevents bubbling to any parent handlers
+    await onFiles(files);
+  };
+
+
 
   return (
     <form
@@ -399,25 +415,18 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
             ))}
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            style={{ display: "none" }}
-            onChange={(e) => onFiles(e.target.files)}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            style={styles.btn}
-          >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }} onPaste={onPaste}>
+          <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
+                onChange={(e) => onFiles(e.target.files)} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} style={styles.btn}>
             Upload images
           </button>
           <span style={{ fontSize: 12, color: colors.textDim }}>
-            Tip: you can add as many screenshots as you need.
+            Tip: click here and press Ctrl+V to paste screenshots.
           </span>
         </div>
+
+
       </Section>
 
       <Section>
@@ -477,42 +486,19 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
       </Section>
 
       <Section>
-        <Row cols="repeat(4, 1fr)" gap={12}>
-          <div>
-            <label style={styles.label}>Entry</label>
-            <input
-              value={t.entry}
-              onChange={(e) => set("entry", e.target.value)}
-              style={styles.input}
-            />
-          </div>
-          <div>
-            <label style={styles.label}>Stop</label>
-            <input
-              value={t.stop}
-              onChange={(e) => set("stop", e.target.value)}
-              style={styles.input}
-            />
-          </div>
-          <div>
-            <label style={styles.label}>Take Profit</label>
-            <input
-              value={t.tp}
-              onChange={(e) => set("tp", e.target.value)}
-              style={styles.input}
-            />
-          </div>
-          <div>
-            <label style={styles.label}>Risk/Reward</label>
-            <input
-              value={t.rr}
-              onChange={(e) => set("rr", e.target.value)}
-              placeholder="2"
-              style={styles.input}
-            />
-          </div>
-        </Row>
-      </Section>
+      <Row cols="1fr" gap={12}>
+        <div>
+          <label style={styles.label}>Risk/Reward</label>
+          <input
+            value={t.rr}
+            onChange={(e) => set("rr", e.target.value)}
+            placeholder="2"
+            style={styles.input}
+          />
+        </div>
+      </Row>
+    </Section>
+
 
       <Section>
         <Row cols="1fr 1fr" gap={12}>
@@ -520,8 +506,10 @@ const TradeForm = ({ initial, onSave, onCancel }) => {
             <label style={styles.label}>Checklist (optional)</label>
             <select style={styles.input}>
               <option value="">Select a checklist</option>
-              <option>Standard Setup</option>
-              <option>News Day Caution</option>
+              <option>W1 &gt; H4 &gt; m15</option>
+              <option>D1 &gt; H1 &gt; m5</option>
+              <option>H4 &gt; m15 &gt; m5</option>
+              <option>Orderblock &gt; m5</option>
             </select>
           </div>
           <div>
@@ -663,13 +651,11 @@ const TradeViewer = ({trade})=>{
           <InfoRow label="Status"><Pill tone={trade.status==='Win'?'emerald': trade.status==='Loss'?'rose':'zinc'}>{trade.status}</Pill></InfoRow>
           <InfoRow label="Side"><Pill tone={trade.side==='Long'?'cyan':'violet'}>{trade.side}</Pill></InfoRow>
           <InfoRow label="P&L">{currency(Number(trade.pnl||0))}</InfoRow>
+          <InfoRow label="Checklist">{trade.checklist || "—"}</InfoRow>
         </div>
 
         <div style={styles.card}>
           <InfoRow label="Entry">{trade.entry}</InfoRow>
-          <InfoRow label="Stop">{trade.stop}</InfoRow>
-          <InfoRow label="Take Profit">{trade.tp}</InfoRow>
-          <InfoRow label="Risk/Reward">{trade.rr}</InfoRow>
           <InfoRow label="Confidence">{trade.confidence} / 5</InfoRow>
           <InfoRow label="Rating">
             <span style={{fontSize:18, letterSpacing:2}}>
