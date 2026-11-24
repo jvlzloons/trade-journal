@@ -1,4 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ACCOUNT_STATUSES,
+  PRICE_LIST,
+  computePropStats,
+  loadPropData,
+  newPayout,
+  newPurchase,
+  savePropData,
+  sizeLabel,
+} from "./propfirm.js";
 
 /**
  * Trade Journal – Tailwind-free version
@@ -27,6 +37,7 @@ const months = [
 ];
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const currency = (n) => (n < 0 ? "-" : "") + "$" + Math.abs(n).toFixed(2);
+const signedCurrency = (n) => (n > 0 ? "+" : "") + currency(n);
 
 /*************************
  * Local Storage helpers
@@ -941,9 +952,544 @@ const DayDetails = ({ dateKey, trades, onView, onEdit, onDelete }) => {
 };
 
 /*************************
+ * Prop Firm Tracker
+ *************************/
+const amber = "#fbbf24";
+const statusTone = { Active: "cyan", Passed: "violet", Funded: "emerald", Breached: "rose" };
+const toneFor = (n) => (n > 0 ? colors.green : n < 0 ? colors.red : colors.text);
+
+const StatCard = ({ label, value, hint, color }) => (
+  <div style={styles.card}>
+    <div style={{ fontSize: 12, color: colors.textDim }}>{label}</div>
+    <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4, color: color || colors.text }}>
+      {value}
+    </div>
+    {hint && <div style={{ fontSize: 12, color: colors.textDim, marginTop: 2 }}>{hint}</div>}
+  </div>
+);
+
+const PropTable = ({ cols, head, children, minWidth = 760 }) => (
+  <div style={{ ...styles.tableDay, overflowX: "auto" }}>
+    <div style={{ minWidth }}>
+      <div style={{ ...styles.tableHeader, gridTemplateColumns: cols }}>
+        {head.map((h, i) => (
+          <div key={i} style={{ padding: 8, textAlign: i > 0 && h.num ? "right" : "left" }}>
+            {h.label}
+          </div>
+        ))}
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const Cell = ({ children, num, color, dim }) => (
+  <div
+    style={{
+      padding: 8,
+      textAlign: num ? "right" : "left",
+      fontVariantNumeric: "tabular-nums",
+      color: color || (dim ? colors.textDim : undefined),
+    }}
+  >
+    {children}
+  </div>
+);
+
+const PropEntryForm = ({ initial, accounts, profitAvailable, onSave, onCancel }) => {
+  const [e, setE] = useState(initial);
+  const set = (k, v) => setE((p) => ({ ...p, [k]: v }));
+  const prices = PRICE_LIST[e.firm] || {};
+  const isPurchase = e.type === "purchase";
+
+  const cost = Number(e.cost) || 0;
+  const previewProfit = e.funding === "own" ? 0 : Math.min(cost, profitAvailable);
+  const previewOwn = cost - previewProfit;
+
+  const canSave = isPurchase
+    ? e.firm.trim() && Number(e.size) > 0 && cost >= 0
+    : e.accountId && Number(e.amount) > 0;
+
+  return (
+    <form
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        if (!canSave) return;
+        onSave(
+          isPurchase
+            ? { ...e, firm: e.firm.trim(), size: Number(e.size), cost }
+            : { ...e, amount: Number(e.amount) }
+        );
+      }}
+    >
+      {isPurchase ? (
+        <>
+          <Section>
+            <Row cols="1fr 1fr 1fr">
+              <div>
+                <label style={styles.label}>Prop firm</label>
+                <input
+                  list="prop-firms"
+                  value={e.firm}
+                  onChange={(ev) => set("firm", ev.target.value)}
+                  style={styles.input}
+                  placeholder="The5ers"
+                />
+                <datalist id="prop-firms">
+                  {Object.keys(PRICE_LIST).map((f) => (
+                    <option key={f} value={f} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label style={styles.label}>Account size (USD)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={e.size}
+                  onChange={(ev) => set("size", ev.target.value)}
+                  style={styles.input}
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Price paid (USD)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={e.cost}
+                  onChange={(ev) => set("cost", ev.target.value)}
+                  style={styles.input}
+                />
+              </div>
+            </Row>
+            {Object.keys(prices).length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <span style={{ ...styles.label, margin: 0, alignSelf: "center" }}>Price list:</span>
+                {Object.entries(prices).map(([size, price]) => {
+                  const on = Number(e.size) === Number(size) && cost === price;
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setE((p) => ({ ...p, size: Number(size), cost: price }))}
+                      style={{
+                        ...styles.btn,
+                        padding: "4px 10px",
+                        fontSize: 13,
+                        borderColor: on ? colors.accent : colors.border,
+                      }}
+                    >
+                      {sizeLabel(size)} · ${price}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          <Section>
+            <Row cols="1fr 1fr 1fr">
+              <div>
+                <label style={styles.label}>Paid with</label>
+                <select
+                  value={e.funding}
+                  onChange={(ev) => set("funding", ev.target.value)}
+                  style={styles.input}
+                >
+                  <option value="auto">Profits first, rest from own money</option>
+                  <option value="own">Own money only</option>
+                </select>
+              </div>
+              <div>
+                <label style={styles.label}>Status</label>
+                <select
+                  value={e.status}
+                  onChange={(ev) => set("status", ev.target.value)}
+                  style={styles.input}
+                >
+                  {ACCOUNT_STATUSES.map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={styles.label}>Date bought (optional)</label>
+                <input
+                  type="date"
+                  value={e.date}
+                  onChange={(ev) => set("date", ev.target.value)}
+                  style={styles.input}
+                />
+              </div>
+            </Row>
+            <div style={{ ...styles.card, marginTop: 12, fontSize: 13 }}>
+              Profit balance available: <b>{currency(profitAvailable)}</b>. This account is paid{" "}
+              <b style={{ color: colors.green }}>{currency(previewProfit)}</b> from profits and{" "}
+              <b style={{ color: amber }}>{currency(previewOwn)}</b> from your own money.
+            </div>
+          </Section>
+        </>
+      ) : (
+        <Section>
+          <Row cols="2fr 1fr 1fr">
+            <div>
+              <label style={styles.label}>Account that paid out</label>
+              <select
+                value={e.accountId}
+                onChange={(ev) => set("accountId", ev.target.value)}
+                style={styles.input}
+              >
+                <option value="">Select an account</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label} ({a.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={styles.label}>Payout amount (USD)</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={e.amount}
+                onChange={(ev) => set("amount", ev.target.value)}
+                style={styles.input}
+              />
+            </div>
+            <div>
+              <label style={styles.label}>Date (optional)</label>
+              <input
+                type="date"
+                value={e.date}
+                onChange={(ev) => set("date", ev.target.value)}
+                style={styles.input}
+              />
+            </div>
+          </Row>
+        </Section>
+      )}
+
+      <Section>
+        <label style={styles.label}>Note</label>
+        <input
+          value={e.note}
+          onChange={(ev) => set("note", ev.target.value)}
+          style={styles.input}
+          placeholder={isPurchase ? "e.g. Bought with 5K payout" : "e.g. First payout"}
+        />
+      </Section>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+        <button type="button" onClick={onCancel} style={styles.btn}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!canSave}
+          style={{ ...styles.btnPrimary, opacity: canSave ? 1 : 0.5 }}
+        >
+          Save
+        </button>
+      </div>
+    </form>
+  );
+};
+
+const PropFirmsView = () => {
+  const [data, setData] = useState(() => loadPropData());
+  const [editing, setEditing] = useState(null); // { entry, isNew }
+
+  useEffect(() => {
+    savePropData(data);
+  }, [data]);
+
+  const { rows, accounts, totals } = useMemo(() => computePropStats(data.entries), [data.entries]);
+
+  const setEntries = (fn) => setData((prev) => ({ ...prev, entries: fn(prev.entries) }));
+
+  const saveEntry = (entry) => {
+    setEntries((list) =>
+      list.some((x) => x.id === entry.id)
+        ? list.map((x) => (x.id === entry.id ? entry : x))
+        : [...list, entry]
+    );
+    setEditing(null);
+  };
+
+  const removeEntry = (entry) => {
+    if (entry.type === "purchase") {
+      const linked = data.entries.filter((x) => x.type === "payout" && x.accountId === entry.id);
+      const msg = linked.length
+        ? `Delete this account and its ${linked.length} payout(s)?`
+        : "Delete this account?";
+      if (!confirm(msg)) return;
+      setEntries((list) => list.filter((x) => x.id !== entry.id && x.accountId !== entry.id));
+    } else {
+      if (!confirm("Delete this payout?")) return;
+      setEntries((list) => list.filter((x) => x.id !== entry.id));
+    }
+  };
+
+  const setStatus = (id, status) =>
+    setEntries((list) => list.map((x) => (x.id === id ? { ...x, status } : x)));
+
+  const rawEntry = (id) => data.entries.find((x) => x.id === id);
+
+  // Profit balance just before the entry being edited (or the current balance for a new one).
+  const editingAvailable = editing
+    ? editing.isNew
+      ? totals.profitBalance
+      : rows.find((r) => r.id === editing.entry.id)?.profitAvailable ?? 0
+    : 0;
+
+  const active = accounts.filter((a) => a.status !== "Breached").length;
+  const breached = accounts.length - active;
+  const paid = totals.fromProfit + totals.fromOwn;
+  const pctProfit = paid ? (totals.fromProfit / paid) * 100 : 0;
+
+  const accountCols = "2.2fr 1.3fr 1fr 1fr 1fr 1fr 1fr 1.3fr";
+  const ledgerCols = "0.4fr 2.6fr 1fr 1fr 1fr 1.1fr 1.3fr";
+
+  return (
+    <div>
+      <div style={{ ...styles.monthHeader, flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>Prop Firm Accounts</div>
+          <div style={{ fontSize: 13, color: colors.textDim }}>
+            {accounts.length} accounts · {active} live · {breached} breached
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setEditing({ entry: newPayout(accounts.at(-1)?.id), isNew: true })}
+            style={styles.btn}
+            disabled={!accounts.length}
+          >
+            ＋ Log payout
+          </button>
+          <button onClick={() => setEditing({ entry: newPurchase(), isNew: true })} style={styles.btnPrimary}>
+            ＋ Add account
+          </button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <StatCard label="Total spent on accounts" value={currency(totals.spent)} hint={`${accounts.length} purchases`} />
+        <StatCard label="Spent from profits" value={currency(totals.fromProfit)} color={colors.green} hint="Paid with payout money" />
+        <StatCard label="Spent from own money" value={currency(totals.fromOwn)} color={amber} hint="Out of your pocket" />
+        <StatCard label="Total payouts" value={currency(totals.payouts)} hint="Gross profit received" />
+        <StatCard
+          label="Net profit"
+          value={signedCurrency(totals.net)}
+          color={toneFor(totals.net)}
+          hint="Payouts minus all account costs"
+        />
+        <StatCard label="Profit balance left" value={currency(totals.profitBalance)} hint="Payouts not yet spent" />
+      </div>
+
+      {paid > 0 && (
+        <div style={{ ...styles.card, marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
+            <span>
+              <span style={{ color: colors.green }}>■</span> Profits {currency(totals.fromProfit)} (
+              {pctProfit.toFixed(0)}%)
+            </span>
+            <span>
+              <span style={{ color: amber }}>■</span> Own money {currency(totals.fromOwn)} (
+              {(100 - pctProfit).toFixed(0)}%)
+            </span>
+          </div>
+          <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", gap: 2 }}>
+            {totals.fromProfit > 0 && <div style={{ flex: totals.fromProfit, background: colors.green }} />}
+            {totals.fromOwn > 0 && <div style={{ flex: totals.fromOwn, background: amber }} />}
+          </div>
+        </div>
+      )}
+
+      {/* Accounts */}
+      <div style={{ fontSize: 14, color: colors.textDim, marginBottom: 8 }}>Accounts</div>
+      <PropTable
+        cols={accountCols}
+        head={[
+          { label: "Account" },
+          { label: "Status" },
+          { label: "Cost", num: true },
+          { label: "From profits", num: true },
+          { label: "From own", num: true },
+          { label: "Payouts", num: true },
+          { label: "Net", num: true },
+          { label: "Actions" },
+        ]}
+      >
+        {accounts.length === 0 && (
+          <div style={{ padding: 12, fontSize: 14, color: colors.textDim }}>No accounts yet.</div>
+        )}
+        {accounts.map((a) => (
+          <div key={a.id} style={{ ...styles.tableRow, gridTemplateColumns: accountCols, alignItems: "center" }}>
+            <Cell>
+              <div style={{ fontWeight: 600 }}>{a.label}</div>
+              {a.note && <div style={{ fontSize: 12, color: colors.textDim }}>{a.note}</div>}
+            </Cell>
+            <Cell>
+              <select
+                value={a.status}
+                onChange={(ev) => setStatus(a.id, ev.target.value)}
+                style={{ ...styles.input, padding: "4px 8px", width: "auto" }}
+                aria-label={`Status of ${a.label}`}
+              >
+                {ACCOUNT_STATUSES.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </Cell>
+            <Cell num>{currency(a.cost)}</Cell>
+            <Cell num color={a.fromProfit ? colors.green : undefined} dim={!a.fromProfit}>
+              {currency(a.fromProfit)}
+            </Cell>
+            <Cell num color={a.fromOwn ? amber : undefined} dim={!a.fromOwn}>
+              {currency(a.fromOwn)}
+            </Cell>
+            <Cell num dim={!a.payouts}>{currency(a.payouts)}</Cell>
+            <Cell num color={toneFor(a.net)}>{signedCurrency(a.net)}</Cell>
+            <div style={{ padding: 8, display: "flex", gap: 6 }}>
+              <button onClick={() => setEditing({ entry: rawEntry(a.id), isNew: false })} style={styles.btn}>
+                Edit
+              </button>
+              <button onClick={() => removeEntry(a)} style={{ ...styles.btn, background: "#3b0b0b" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+        {accounts.length > 0 && (
+          <div
+            style={{
+              ...styles.tableRow,
+              gridTemplateColumns: accountCols,
+              background: "#0f0f12",
+              fontWeight: 700,
+              borderBottom: "none",
+            }}
+          >
+            <Cell>Total</Cell>
+            <Cell />
+            <Cell num>{currency(totals.spent)}</Cell>
+            <Cell num color={colors.green}>{currency(totals.fromProfit)}</Cell>
+            <Cell num color={amber}>{currency(totals.fromOwn)}</Cell>
+            <Cell num>{currency(totals.payouts)}</Cell>
+            <Cell num color={toneFor(totals.net)}>{signedCurrency(totals.net)}</Cell>
+            <Cell />
+          </div>
+        )}
+      </PropTable>
+
+      {/* Ledger */}
+      <div style={{ fontSize: 14, color: colors.textDim, margin: "24px 0 8px" }}>
+        Money timeline <span style={{ fontSize: 12 }}>(oldest first: purchases use profit balance first)</span>
+      </div>
+      <PropTable
+        cols={ledgerCols}
+        head={[
+          { label: "#" },
+          { label: "What happened" },
+          { label: "Amount", num: true },
+          { label: "From profits", num: true },
+          { label: "From own", num: true },
+          { label: "Profit balance", num: true },
+          { label: "Actions" },
+        ]}
+      >
+        {rows.length === 0 && (
+          <div style={{ padding: 12, fontSize: 14, color: colors.textDim }}>Nothing logged yet.</div>
+        )}
+        {rows.map((r, i) => (
+          <div key={r.id} style={{ ...styles.tableRow, gridTemplateColumns: ledgerCols, alignItems: "center" }}>
+            <Cell dim>{i + 1}</Cell>
+            <Cell>
+              {r.type === "purchase" ? (
+                <>
+                  Bought <b>{r.label}</b> <Pill tone={statusTone[r.status]}>{r.status}</Pill>
+                </>
+              ) : (
+                <>
+                  <Pill tone="emerald">Payout</Pill> from <b>{r.accountLabel}</b>
+                </>
+              )}
+              {(r.date || r.note) && (
+                <div style={{ fontSize: 12, color: colors.textDim }}>
+                  {[r.date, r.note].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </Cell>
+            {r.type === "purchase" ? (
+              <>
+                <Cell num color={colors.red}>{currency(-r.cost)}</Cell>
+                <Cell num color={r.fromProfit ? colors.green : undefined} dim={!r.fromProfit}>
+                  {currency(r.fromProfit)}
+                </Cell>
+                <Cell num color={r.fromOwn ? amber : undefined} dim={!r.fromOwn}>
+                  {currency(r.fromOwn)}
+                </Cell>
+              </>
+            ) : (
+              <>
+                <Cell num color={colors.green}>{signedCurrency(r.amount)}</Cell>
+                <Cell num dim>—</Cell>
+                <Cell num dim>—</Cell>
+              </>
+            )}
+            <Cell num>{currency(r.pool)}</Cell>
+            <div style={{ padding: 8, display: "flex", gap: 6 }}>
+              <button onClick={() => setEditing({ entry: rawEntry(r.id), isNew: false })} style={styles.btn}>
+                Edit
+              </button>
+              <button onClick={() => removeEntry(rawEntry(r.id))} style={{ ...styles.btn, background: "#3b0b0b" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </PropTable>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={
+          editing
+            ? `${editing.isNew ? "Add" : "Edit"} ${editing.entry.type === "purchase" ? "Account" : "Payout"}`
+            : ""
+        }
+      >
+        {editing && (
+          <PropEntryForm
+            initial={editing.entry}
+            accounts={accounts}
+            profitAvailable={editingAvailable}
+            onSave={saveEntry}
+            onCancel={() => setEditing(null)}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+/*************************
  * Hero / Home
  *************************/
-const Hero = ({ onGoCalendar, onAddTrade }) => {
+const Hero = ({ onGoCalendar, onAddTrade, onGoProp }) => {
   return (
     <div style={styles.heroWrap}>
       <h1 style={styles.heroH1}>Josh's Journal</h1>
@@ -954,6 +1500,9 @@ const Hero = ({ onGoCalendar, onAddTrade }) => {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
         <button onClick={onGoCalendar} style={styles.btn}>
           📅 Open Calendar
+        </button>
+        <button onClick={onGoProp} style={styles.btn}>
+          💼 Prop Firms
         </button>
         <button onClick={onAddTrade} style={styles.btnPrimary}>
           ＋ Add Trade
@@ -969,7 +1518,7 @@ const Hero = ({ onGoCalendar, onAddTrade }) => {
 export default function TradeJournalApp() {
   const [viewer, setViewer] = useState(null); // { trade }
   const [state, setState] = useState(() => loadJournal());
-  const [view, setView] = useState("home"); // home | calendar | year
+  const [view, setView] = useState("home"); // home | calendar | year | prop
   const [monthAnchor, setMonthAnchor] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState(() =>
     fmtDateKey(new Date())
@@ -1030,6 +1579,9 @@ export default function TradeJournalApp() {
             <button onClick={() => setView("year")} style={styles.btn}>
               Year
             </button>
+            <button onClick={() => setView("prop")} style={styles.btn}>
+              Prop Firms
+            </button>
             <button onClick={() => openAdd()} style={styles.btnPrimary}>
               Add Trade
             </button>
@@ -1040,8 +1592,14 @@ export default function TradeJournalApp() {
       {/* Content */}
       <div style={styles.container}>
         {view === "home" && (
-          <Hero onGoCalendar={() => setView("calendar")} onAddTrade={() => openAdd()} />
+          <Hero
+            onGoCalendar={() => setView("calendar")}
+            onGoProp={() => setView("prop")}
+            onAddTrade={() => openAdd()}
+          />
         )}
+
+        {view === "prop" && <PropFirmsView />}
 
         {view === "calendar" && (
           <>
