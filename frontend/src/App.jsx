@@ -955,7 +955,7 @@ const DayDetails = ({ dateKey, trades, onView, onEdit, onDelete }) => {
  * Prop Firm Tracker
  *************************/
 const amber = "#fbbf24";
-const statusTone = { Active: "cyan", Passed: "violet", Funded: "emerald", Breached: "rose" };
+const statusTone = { Eval: "cyan", Passed: "violet", Funded: "emerald", Breached: "rose" };
 const toneFor = (n) => (n > 0 ? colors.green : n < 0 ? colors.red : colors.text);
 
 const StatCard = ({ label, value, hint, color }) => (

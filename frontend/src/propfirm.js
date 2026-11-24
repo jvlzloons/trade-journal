@@ -17,7 +17,8 @@ export const PRICE_LIST = {
   The5ers: { 5000: 39, 10000: 69, 25000: 176 },
 };
 
-export const ACCOUNT_STATUSES = ["Active", "Passed", "Funded", "Breached"];
+// Eval = still in the challenge, Passed = challenge passed, waiting on funded account.
+export const ACCOUNT_STATUSES = ["Eval", "Passed", "Funded", "Breached"];
 
 const uid = () => crypto.randomUUID();
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -34,7 +35,7 @@ export const newPurchase = (firm = "The5ers") => ({
   size: 25000,
   cost: PRICE_LIST[firm]?.[25000] ?? 0,
   funding: "auto",
-  status: "Active",
+  status: "Eval",
   date: "",
   note: "",
 });
@@ -67,11 +68,11 @@ export function seedPropData() {
   });
   return {
     entries: [
-      buy(a5k, 5000, "Funded", "First account"),
+      buy(a5k, 5000, "Breached", "First account. Paid out $400, then breached"),
       { id: uid(), type: "payout", accountId: a5k, amount: 400, date: "", note: "First payout" },
       buy(a25k, 25000, "Breached", "Bought with the 5K payout. Breached, no profit"),
       buy(a10k, 10000, "Breached", "Bought with the 5K payout. Breached, no profit"),
-      buy(a25k2, 25000, "Active", "Rest of the payout + own money"),
+      buy(a25k2, 25000, "Eval", "Rest of the payout + own money"),
     ],
   };
 }
@@ -81,7 +82,10 @@ export function loadPropData() {
     const raw = localStorage.getItem(PROP_LS_KEY);
     if (!raw) return seedPropData();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed?.entries) ? parsed : seedPropData();
+    if (!Array.isArray(parsed?.entries)) return seedPropData();
+    // "Active" was renamed to "Eval".
+    const entries = parsed.entries.map((e) => (e.status === "Active" ? { ...e, status: "Eval" } : e));
+    return { ...parsed, entries };
   } catch {
     return seedPropData();
   }
